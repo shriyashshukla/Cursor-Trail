@@ -1,96 +1,75 @@
 ﻿"use client";
 
-import { motion } from "motion/react";
+import { AnimatePresence } from "motion/react";
 import { useEffect, useRef, useState } from "react";
+import TrailImage from "./TrailImage";
 
-const TRAIL_COUNT = 14;
-const EASE = 0.22;
-const IMAGE_SRC = "/cursor-trail.svg";
+const IMAGES = [
+  "/images/1.jpeg",
+  "/images/2.jpeg",
+  "/images/3.jpeg",
+  "/images/4.jpeg",
+  "/images/5.jpeg",
+  "/images/6.jpeg",
+  "/images/7.jpeg",
+  "/images/8.jpeg",
+  "/images/9.jpeg",
+];
 
-type Point = {
+type TrailItem = {
+  id: string;
   x: number;
   y: number;
+  src: string;
 };
 
-function createTrail() {
-  return Array.from({ length: TRAIL_COUNT }, () => ({ x: 0, y: 0 }));
-}
-
 export default function CursorTrail() {
-  const [trail, setTrail] = useState<Point[]>(createTrail());
-  const mousePosition = useRef<Point>({ x: 0, y: 0 });
-  const frameRef = useRef<number | null>(null);
+  const [trail, setTrail] = useState<TrailItem[]>([]);
+  const lastPoint = useRef({ x: -100, y: -100 });
+  const nextImageIndex = useRef(0);
+  const nextId = useRef(0);
+  const cleanupTimeouts = useRef<number[]>([]);
+
+  const DISTANCE_THRESHOLD = 100;
+  const SPAWN_LIFETIME = 900;
 
   useEffect(() => {
-    const handleMouseMove = (event: MouseEvent) => {
-      mousePosition.current = {
-        x: event.clientX,
-        y: event.clientY,
-      };
+    const handleMove = (e: PointerEvent) => {
+      const x = e.clientX;
+      const y = e.clientY;
+      const dx = x - lastPoint.current.x;
+      const dy = y - lastPoint.current.y;
+      const distance = Math.hypot(dx, dy);
+
+      if (distance < DISTANCE_THRESHOLD) return;
+
+      lastPoint.current = { x, y };
+      const id = String(nextId.current++);
+      const src = IMAGES[nextImageIndex.current];
+      nextImageIndex.current = (nextImageIndex.current + 1) % IMAGES.length;
+
+      setTrail((current) => [...current, { id, x, y, src }]);
+
+      const timeoutId = window.setTimeout(() => {
+        setTrail((current) => current.filter((item) => item.id !== id));
+      }, SPAWN_LIFETIME);
+
+      cleanupTimeouts.current.push(timeoutId);
     };
 
-    window.addEventListener("mousemove", handleMouseMove);
-    return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, []);
+    window.addEventListener("pointermove", handleMove);
 
-  useEffect(() => {
-    const animate = () => {
-      setTrail((previous) => {
-        const next = [...previous];
-        next[0] = { ...mousePosition.current };
-
-        for (let i = 1; i < TRAIL_COUNT; i += 1) {
-          next[i] = {
-            x: next[i].x + (next[i - 1].x - next[i].x) * EASE,
-            y: next[i].y + (next[i - 1].y - next[i].y) * EASE,
-          };
-        }
-
-        return next;
-      });
-
-      frameRef.current = requestAnimationFrame(animate);
-    };
-
-    frameRef.current = requestAnimationFrame(animate);
     return () => {
-      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+      window.removeEventListener("pointermove", handleMove);
+      cleanupTimeouts.current.forEach((id) => window.clearTimeout(id));
     };
   }, []);
 
   return (
-    <>
-      {trail.map((point, index) => {
-        const intensity = (TRAIL_COUNT - index) / TRAIL_COUNT;
-        const size = 18 + index * 1.4;
-
-        return (
-          <motion.img
-            key={index}
-            src={IMAGE_SRC}
-            alt=""
-            className="fixed top-0 left-0 pointer-events-none"
-            animate={{
-              x: point.x - size / 2,
-              y: point.y - size / 2,
-              scale: 0.6 + intensity * 0.8,
-              opacity: Math.pow(intensity, 1.6),
-              rotate: index % 2 === 0 ? 6 : -6,
-            }}
-            transition={{
-              type: "spring",
-              damping: 22,
-              stiffness: 170,
-              duration: 0.16,
-            }}
-            style={{
-              width: `${size}px`,
-              height: `${size}px`,
-              filter: "drop-shadow(0 0 22px rgba(56, 189, 248, 0.45))",
-            }}
-          />
-        );
-      })}
-    </>
+    <AnimatePresence>
+      {trail.map((item) => (
+        <TrailImage key={item.id} x={item.x} y={item.y} src={item.src} />
+      ))}
+    </AnimatePresence>
   );
 }
